@@ -1,0 +1,1914 @@
+---
+title: "Instant credit granting tool"
+date: "December 21, 2017"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+  html_document:
+    highlight: pygments
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Team 30 : ASADULLAH Ousman - KORTBI Hicham - AKOLLOR Jean-Livio - ALLAERD Bastien
+
+Team 31: KORNY Mohamed - RESTES Erwan - RABETRANO Dylan - MANZANO Guillaume
+
+Mentor: BRUNEL Vivien
+
+\newpage
+# I. Introduction
+Loan defaults played an integral role in the collapse of the financial industry in 2008. 
+In the midsts of a housing bubble, banks wanted their share of the profits and so they engaged in
+misdirected and extremely risky lending practices (subprime mortgages, for example, which involve lending money to borrowers with lower credit ratings). 
+As more banks participated in this type of lending, the competition for credit grew fierce and
+institutions further relaxed their standards of credit worthiness. Banks  lent too 
+much money to the wrong people. Lenders finally faced the consequences when many of 
+those subprime loans were not repaid;  in the ensuing months the United States faced the 
+worst recession since the 1930s. 
+	 
+In the wake of the subprime mortgage crisis, banks and regulators began paying special 
+attention to the risks associated with lending.
+The actual method of credit scoring need to be renew and the state of the art for credit scoring is using machine algorithms
+We want to build a model to predict the probability that somebody will get the credit by the bank or in other words the probability of default on a loan of the comnsumer.
+
+The dataset used for this analysis is an extraction from Kraggle, Give Me Some Credit.
+
+\newpage
+# II. Analysis of the dataset
+
+## 1. Read of files
+
+```{r}
+cs_training <- read.csv('cs-training.csv', header = TRUE)
+cs_test <- read.csv('cs-test.csv',header = TRUE)
+```
+
+## 2. Description of the dataset
+```{r}
+names(cs_training)
+```
+The dependent variable is 'SeriousDlqin2yrs' representing in this case if the person did a default's credit. There is only two possible values: No (0) or Yes (1). 
+No, y=0, negative examples.
+Yes, y=1, positive examples.
+For all the analysis, we'll name 'Yes' for the people who had a credit failure and vice versa for the 'No'.
+
+Below we have the description of each features or indepedent variables (except the first one) of the dataset.
+```{r}
+summary(cs_training)
+str(cs_training)
+```
+
+## 3. Delete the first column corresponding to the ID
+
+```{r}
+cs_training <- cs_training[,-1]
+cs_test <- cs_test[,-1]
+```
+
+## 4. Use of library needed
+
+```{r}
+library(magrittr)
+library(ggplot2)
+library(boxplotdbl)
+library(lattice)
+library(Amelia)
+library(ROSE)
+library(ROCR)
+library(cvAUC)
+```
+
+
+
+## 5. What are the missing values ?
+
+- training data
+As we can see, there is 29 731 NA's for MonthlyIncome and 3924 NA's for NumberOfDependents, for a total of 33 655 NA's. So there is 22,4 % (33 655/150 000) missing values on this datatset.
+
+```{r echo = FALSE}
+sum(is.na(cs_training$SeriousDlqin2yrs))
+sum(is.na(cs_training$RevolvingUtilizationOfUnsecuredLines))
+sum(is.na(cs_training$age))
+sum(is.na(cs_training$NumberOfTime30.59DaysPastDueNotWorse))
+sum(is.na(cs_training$DebtRatio))
+sum(is.na(cs_training$MonthlyIncome))
+sum(is.na(cs_training$NumberOfOpenCreditLinesAndLoans))
+sum(is.na(cs_training$NumberOfTimes90DaysLate))
+sum(is.na(cs_training$NumberRealEstateLoansOrLines))
+sum(is.na(cs_training$NumberOfTime60.89DaysPastDueNotWorse))
+sum(is.na(cs_training$NumberOfDependents))
+```
+Missing values : 
+
+MonthlyIncome = 29 731
+NumberofDepends = 3 924
+```{r}
+missmap(cs_training, main = "Missing values vs observed")
+```
+
+- test data
+
+```{r}
+sum(is.na(cs_test$SeriousDlqin2yrs))
+sum(is.na(cs_test$RevolvingUtilizationOfUnsecuredLines))
+sum(is.na(cs_test$age))
+sum(is.na(cs_test$NumberOfTime30.59DaysPastDueNotWorse))
+sum(is.na(cs_test$DebtRatio))
+sum(is.na(cs_test$MonthlyIncome))
+sum(is.na(cs_test$NumberOfOpenCreditLinesAndLoans))
+sum(is.na(cs_test$NumberOfTimes90DaysLate))
+sum(is.na(cs_test$NumberRealEstateLoansOrLines))
+sum(is.na(cs_test$NumberOfTime60.89DaysPastDueNotWorse))
+sum(is.na(cs_test$NumberOfDependents))
+```
+Missing values : 
+
+MonthlyIncome = 20 103
+NumberofDepends = 2 626
+
+We'll see later how we will treat this values.
+```{r}
+missmap(cs_test)
+```
+
+```{r}
+library(VIM)
+aggr_plot <- aggr(cs_training, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+
+
+## 6. Data distribution
+```{r}
+table(cs_training$SeriousDlqin2yrs)
+table(cs_test$SeriousDlqin2yrs)
+```
+
+
+Most of the missing data 33 655 pertain to the 'No' (negative examples) and the dataset is predominantly of 'No', there will not be much information loss for the predictive model building if we removed the NA's data set.
+
+How many delinquent we have?
+```{r}
+prop.table(table(cs_training$SeriousDlqin2yrs))
+barplot(prop.table(table(cs_training$SeriousDlqin2yrs)),col ='steelblue')
+```
+
+We find that 6.6 % of customers where seriouly deliquant in payment the last 2 years. (on 150 000 customers)
+It represents around 9,900 customers.
+
+\newpage
+# III. Exploration of the dataset
+All our features are continuous variables.
+We want to too a clear dataset without abnormal values and features skewed.
+Outliers in data can distort predictions and affect the accuracy, if you don't detect and handle them appropriately.
+Treating or altering the outlier/extreme values in genuine observations is not a standard operating procedure. However, it is essential to understand their impact on your predictive models. It is left to the best judgement of the investigator to decide whether treating outliers is necessary and how to go about it.
+
+So, why identifying the extreme values is important? 
+Because, it can drastically bias/change the fit estimates and predictions.
+We plotted the distribution of features on the training and test datasets. There is no statistically significant difference between the datasets. 
+So the decision made on the training data will be the same on the test data.
+```{r}
+training_DataClear = cs_training
+test_DataClear = cs_test
+```
+
+
+## 1. RevolvingUtilizationOfUnsecuredLines
+
+```{r}
+summary(training_DataClear$RevolvingUtilizationOfUnsecuredLines)
+summary(test_DataClear$RevolvingUtilizationOfUnsecuredLines)
+```
+We have a max of 50708, it's an abnormal values and it skewes the mean because of the high values.
+Variable 'RevolvingUtilizationOfUnsecuredLines' is the total balance on credit cards and personal lines of credit except real estate and no installment debt like car loans divided by the sum of credit limits. Thus the normal range of this variable lies between 0 and 1. However, it has outliers larger than 5000. Thus we must handle this problem.
+```{r}
+plot(training_DataClear$RevolvingUtilizationOfUnsecuredLines)
+plot(test_DataClear$RevolvingUtilizationOfUnsecuredLines)
+```
+
+```{r}
+sum(training_DataClear$RevolvingUtilizationOfUnsecuredLines>1)
+sum(test_DataClear$RevolvingUtilizationOfUnsecuredLines>1)
+```
+```{r}
+qqnorm(training_DataClear$RevolvingUtilizationOfUnsecuredLines[training_DataClear$RevolvingUtilizationOfUnsecuredLines<=1])
+qqline(training_DataClear$RevolvingUtilizationOfUnsecuredLines)
+```
+
+So to replace replace abnormal values, all ratio above 1 should be replace by the median.
+0.15 for the training data clear of missing values.
+```{r}
+quantile(training_DataClear$RevolvingUtilizationOfUnsecuredLines, c(0.95,0.97,0.98,0.99,0.999))
+sd(training_DataClear$RevolvingUtilizationOfUnsecuredLines[training_DataClear$RevolvingUtilizationOfUnsecuredLines<=1])
+median(training_DataClear$RevolvingUtilizationOfUnsecuredLines[training_DataClear$RevolvingUtilizationOfUnsecuredLines<=1])
+```
+
+
+
+
+```{r}
+training_DataClear$RevolvingUtilizationOfUnsecuredLines[training_DataClear$RevolvingUtilizationOfUnsecuredLines>1]=0.15
+test_DataClear$RevolvingUtilizationOfUnsecuredLines[test_DataClear$RevolvingUtilizationOfUnsecuredLines>1]=0.153
+summary(training_DataClear$RevolvingUtilizationOfUnsecuredLines)
+summary(test_DataClear$RevolvingUtilizationOfUnsecuredLines)
+```
+
+
+## 2. Age
+Age of borrowers in years.
+```{r}
+summary(training_DataClear$age)
+hist(training_DataClear$age,col='red', main = "Distribution of the age")
+hist(test_DataClear$age, col='red', main="Distribution of the age- Test data")
+```
+
+We just have an error, an 0 age in one line.
+```{r}
+training_DataClear$age[training_DataClear$age==0]=52
+summary(training_DataClear$age)
+```
+
+
+Except that, this predictor is normal.
+
+## 3. NumberOfTime30-59DaysPastDueNotWorse
+Number of times borrower has been 30-59 days past due but no worse in the last 2 years.
+
+```{r}
+summary(training_DataClear$NumberOfTime30.59DaysPastDueNotWorse)
+summary(test_DataClear$NumberOfTime30.59DaysPastDueNotWorse)
+```
+As we can see, we have abnormal values here. The mean is skewed with high values with a max of 98.
+```{r}
+table(training_DataClear$NumberOfTime30.59DaysPastDueNotWorse)
+table(test_DataClear$NumberOfTime30.59DaysPastDueNotWorse)
+```
+
+As we see on this distribution above, the distribution increases suddenly from 13 to 96.
+That must be missing values coded with 96 and 98 so we will replace this values by 0.
+```{r}
+training_DataClear$NumberOfTime30.59DaysPastDueNotWorse[training_DataClear$NumberOfTime30.59DaysPastDueNotWorse>90]=0
+test_DataClear$NumberOfTime30.59DaysPastDueNotWorse[test_DataClear$NumberOfTime30.59DaysPastDueNotWorse>90]=0
+table(training_DataClear$NumberOfTime30.59DaysPastDueNotWorse)
+table(test_DataClear$NumberOfTime30.59DaysPastDueNotWorse)
+```
+After doing some digging, we discovered 96 or 98 ,these quantitative values were used to code for qualitative values such as failed to answer or not applicable.
+
+## 4. NumberOfOpenCreditLinesAndLoans
+
+```{r}
+summary(training_DataClear$NumberOfOpenCreditLinesAndLoans)
+hist(training_DataClear$NumberOfOpenCreditLinesAndLoans)
+```
+This variable looks well distributed except fex outliers with low frequency.
+```{r}
+#training
+quantile(training_DataClear$NumberOfOpenCreditLinesAndLoans,c(.25,.5,.75,.9,.999))
+hist(training_DataClear$NumberOfOpenCreditLinesAndLoans)
+#test
+quantile(test_DataClear$NumberOfOpenCreditLinesAndLoans,c(.25,.5,.75,.9,.999))
+hist(test_DataClear$NumberOfOpenCreditLinesAndLoans)
+```
+
+```{r}
+training_DataClear<-training_DataClear[-which(training_DataClear$NumberOfOpenCreditLinesAndLoans>34),]
+test_DataClear<-test_DataClear[-which(test_DataClear$NumberOfOpenCreditLinesAndLoans>34),]
+```
+
+
+## 5. NumberOfTimes90DaysLate
+
+```{r}
+#training
+summary(training_DataClear$NumberOfTimes90DaysLate)
+hist(training_DataClear$NumberOfTimes90DaysLate)
+table(training_DataClear$NumberOfTimes90DaysLate)
+#test
+summary(test_DataClear$NumberOfTimes90DaysLate)
+hist(test_DataClear$NumberOfTimes90DaysLate)
+table(test_DataClear$NumberOfTimes90DaysLate)
+```
+As we see on this distribution above, the distribution increases suddenly from 17 to 96.
+That must be missing values coded with 96 and 98 so we will replace this values by 0(median).
+```{r}
+#training
+training_DataClear$NumberOfTimes90DaysLate[training_DataClear$NumberOfTimes90DaysLate>18]=0
+table(training_DataClear$NumberOfTimes90DaysLate)
+#test
+test_DataClear$NumberOfTimes90DaysLate[test_DataClear$NumberOfTimes90DaysLate>18]=0
+table(test_DataClear$NumberOfTimes90DaysLate)
+```
+
+
+## 6. NumberRealEstateLoansOrLines
+
+```{r}
+#training
+summary(training_DataClear$NumberRealEstateLoansOrLines)
+hist(training_DataClear$NumberRealEstateLoansOrLines)
+quantile(training_DataClear$NumberRealEstateLoansOrLines,c(.25,.5,.75,.9,.999))
+#test
+summary(test_DataClear$NumberRealEstateLoansOrLines)
+hist(test_DataClear$NumberRealEstateLoansOrLines)
+quantile(test_DataClear$NumberRealEstateLoansOrLines,c(.25,.5,.75,.9,.999))
+```
+
+
+```{r}
+training_DataClear<-training_DataClear[-which(training_DataClear$NumberRealEstateLoansOrLines>10),]
+hist(training_DataClear$NumberRealEstateLoansOrLines)
+test_DataClear<-test_DataClear[-which(test_DataClear$NumberRealEstateLoansOrLines>10),]
+hist(test_DataClear$NumberRealEstateLoansOrLines)
+```
+
+## 7. NumberOfTime60-89DaysPastDueNotWorse
+
+```{r}
+#training
+summary(training_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+hist(training_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+table(training_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+#test
+summary(test_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+hist(test_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+table(test_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+```
+```{r}
+#training
+training_DataClear$NumberOfTime60.89DaysPastDueNotWorse[training_DataClear$NumberOfTime60.89DaysPastDueNotWorse>12]=0
+table(training_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+#test
+test_DataClear$NumberOfTime60.89DaysPastDueNotWorse[test_DataClear$NumberOfTime60.89DaysPastDueNotWorse>12]=0
+table(test_DataClear$NumberOfTime60.89DaysPastDueNotWorse)
+```
+
+## 8. NumberOfDependents
+NumberOfDependents contains missing values, only 1.75% of the dataset and it has no influence with other features.
+
+```{r}
+summary(training_DataClear$NumberOfDependents)
+summary(test_DataClear$NumberOfDependents)
+```
+We decide to replace the missing values by the median.
+```{r}
+#training
+training_DataClear$NumberOfDependents[is.na(training_DataClear$NumberOfDependents)]<-median(training_DataClear$NumberOfDependents,na.rm = TRUE)
+summary(training_DataClear$NumberOfDependents)
+#test
+test_DataClear$NumberOfDependents[is.na(test_DataClear$NumberOfDependents)]<-median(test_DataClear$NumberOfDependents,na.rm = TRUE)
+summary(test_DataClear$NumberOfDependents)
+```
+
+```{r}
+#training
+hist(training_DataClear$NumberOfDependents)
+quantile(training_DataClear$NumberOfDependents,c(.25,.5,.75,.9,.999))
+#test
+hist(test_DataClear$NumberOfDependents)
+quantile(test_DataClear$NumberOfDependents,c(.25,.5,.75,.9,.999))
+```
+
+```{r}
+#training
+training_DataClear<-training_DataClear[-which(training_DataClear$NumberOfDependents>7),]
+hist(training_DataClear$NumberOfDependents)
+#test
+test_DataClear<-test_DataClear[-which(test_DataClear$NumberOfDependents>7),]
+hist(test_DataClear$NumberOfDependents)
+```
+
+## 9. Monthly Income & Debt Ratio
+We'll see the Monthly Income and DebtRatio together because they are related.
+DebtRatio depends of MonthlyIncome and Monthly Income contains Na's values and for this NA's values, we have the highest DebtRatio, so we have to ask ourself if the DebtRatio has been computed with the Na's Monthly Income (replace by 1 by example)
+If the monthly debt has been divided by 1, it will explain the high values of DebtRatio and DebtRatio will be the monthly debt instead of DebtRatio.
+So first, we have to handle the problem of missing values of MonthlyIncome.
+Then, we have to handle the problem of high values of DebtRatio due to NA's values for MonthlyIncome.
+
+
+```{r}
+hist(training_DataClear$MonthlyIncome,col='red', main = "Distribution of the MonthlyIncome")
+```
+There is many missing values on MonthlyIncome, almost 20% of the dataset.
+Maybe because monthly income is taboo topic, so it's failed to answer.
+MCAR: missing completely at random. This is the desirable scenario in case of missing data.
+Missing values are ubiquitous in data science. It has to be handled appropriately for better model building.
+The first thing we can think is the case of deletion of this part of the dataset but 20% is really huge to delete it will affect the model training (more data = more accurate predictions) so we have to handle them in other ways.
+```{r}
+summary(training_DataClear$MonthlyIncome)
+summary(test_DataClear$MonthlyIncome)
+```
+```{r}
+trainingwithNA <- training_DataClear
+trainingwithoutNA <- training_DataClear[-which(is.na(training_DataClear$MonthlyIncome)),]
+```
+
+```{r}
+trainingNA <- training_DataClear[is.na(training_DataClear$MonthlyIncome),]
+testNA <- test_DataClear[is.na(test_DataClear$MonthlyIncome),]
+prop.table(table(trainingNA$SeriousDlqin2yrs))
+barplot(prop.table(table(trainingNA$SeriousDlqin2yrs)),col ='steelblue')
+```
+The missing values ares almost (less 1) at the same proportion of 0 and 1 delinquent from the original dataset.
+
+There is many methods to handle the missing values problem:
+case deletion, direct imputation (median, kNN), model-based imputation (mice, Amelia), machine learning methods(gbm)
+
+For the record, we try kNN, MICE, Amelia and others but we failed because of time, memory consuming and failed to implement.
+
+We put NA's Values on DebtRation with MonthlyIncome NA's values to not affect the result of MonthlyIncome because MonthlyIncome could be deduce from DebtRatio and we are almost certain that we have wrong values here.
+
+```{r}
+for (row in 1:nrow(training_DataClear))
+{
+  if (is.na(training_DataClear[row,6]))
+  {
+    #DebtRatio replace by NA
+    training_DataClear[row,5]=NA
+  }
+}
+for (row in 1:nrow(test_DataClear))
+{
+  if (is.na(test_DataClear[row,6]))
+  {
+    #DebtRatio replace by NA
+    test_DataClear[row,5]=NA
+  }
+}
+```
+
+- case deletion
+We try the case deletion to affirm our assumption that it isn't the best way to handle this.
+
+```{r}
+training_deletion <- training_DataClear[-which(is.na(training_DataClear$MonthlyIncome)),]
+test_deletion <- test_DataClear[-which(is.na(test_DataClear$MonthlyIncome)),]
+```
+
+- gbm
+
+```{r}
+library(imputation)
+#training
+training_GBM <- gbmImpute(training_DataClear[,-1], cv.fold = 5, max.iters = 3)
+training_gbm <- training_GBM[["x"]]
+training_One <- training_DataClear[,1]
+training_gbm$SeriousDlqin2yrs <- training_One
+training_gbm <- subset(training_gbm, select=c(11,1:10))
+#test
+test_GBM <- gbmImpute(test_DataClear[,-1], cv.fold = 5, max.iters = 3)
+test_gbm <- test_GBM[["x"]]
+test_One <- test_DataClear[,1]
+test_gbm$SeriousDlqin2yrs <- test_One
+test_gbm <- subset(test_gbm, select=c(11,1:10))
+```
+
+```{r}
+hist(training_gbm$MonthlyIncome)
+hist(training_gbm$DebtRatio)
+```
+
+
+- median
+
+```{r}
+training_median <- training_DataClear
+test_median <- test_DataClear
+training_median$MonthlyIncome[is.na(training_median$MonthlyIncome)]<-median(training_median$MonthlyIncome,na.rm = TRUE)
+training_median$DebtRatio[is.na(training_median$DebtRatio)]<-median(training_median$DebtRatio,na.rm = TRUE)
+test_median$MonthlyIncome[is.na(test_median$MonthlyIncome)]<-median(test_median$MonthlyIncome,na.rm = TRUE)
+test_median$DebtRatio[is.na(test_median$DebtRatio)]<-median(test_median$DebtRatio,na.rm = TRUE)
+```
+--------------------------------
+
+```{r}
+#deletion
+quantile(training_deletion$MonthlyIncome, c(0.995))
+quantile(test_deletion$MonthlyIncome, c(0.995))
+#gbm
+quantile(training_gbm$MonthlyIncome, c(0.995))
+quantile(test_gbm$MonthlyIncome, c(0.995))
+#median
+quantile(training_median$MonthlyIncome, c(0.995))
+quantile(test_median$MonthlyIncome, c(0.995))
+```
+We also remove the richest people who have a monthly income above 30,000 to have a dataset reprsentative of normal people.
+```{r}
+#deletion
+training_deletion <- training_deletion[-which(training_deletion$MonthlyIncome>30000),]
+test_deletion <- test_deletion[-which(test_deletion$MonthlyIncome>30000),]
+#gbm
+training_gbm <- training_gbm[-which(training_gbm$MonthlyIncome>30000),]
+test_gbm <- test_gbm[-which(test_gbm$MonthlyIncome>30000),]
+#median
+training_median <- training_median[-which(training_median$MonthlyIncome>30000),]
+test_median <- test_median[-which(test_median$MonthlyIncome>30000),]
+```
+
+```{r}
+#deletion
+hist(training_deletion$MonthlyIncome, main="Distribution of the Monthly income (case deletion)")
+#gbm
+hist(training_gbm$MonthlyIncome, main="Distribution of the Monthly income (case gbm)")
+#median
+hist(training_median$MonthlyIncome, main="Distribution of the Monthly income (case median)")
+```
+
+After the datapreprocessing, we finish with 3 datasets (6 with the test), we'll try to the see the difference between all cases to see which one is the best to use to train our model.
+
+## 10. Scatterplot Matrix
+
+```{r}
+my_cols <- c("#00AFBB", "#E7B800", "#FC4E07") 
+# Correlation panel
+panel.cor <- function(x, y){
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- round(cor(x, y), digits=2)
+    txt <- paste0("R = ", r)
+    cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+# Customize upper panel
+upper.panel<-function(x, y){
+  points(x,y, pch = 19, col = my_cols[training_median$SeriousDlqin2yrs])
+}
+# Create the plots
+pairs(training_median[,2:11], 
+      lower.panel = panel.cor,
+      upper.panel = upper.panel)
+```
+
+
+## 12. Multicolinearility
+
+Multicolinearility is when features are correlated with others.
+
+```{r}
+library(corrplot)
+library(readr)
+library(readxl)
+
+dfTrainingRenamed<-training_median
+names(dfTrainingRenamed) <- c("X1","X2","X3","X4","X5","X6","X7","X8","X9","X10","X11")
+
+mcor <- cor(dfTrainingRenamed, method = c("pearson", "kendall", "spearman"))
+#corrplot(mcor, method = "square", type="upper", tl.col="black", tl.srt=45)
+corrplot.mixed(mcor,tl.col="black",tl.srt=45)
+#X1:SeriousDlqin2yrs
+#X2:RevolvingUtilizationOfUnsecuredLines
+#X3:age
+#X4:NumberOfTime30-59DaysPastDueNotWorse
+#X5:DebtRatio
+#X6:MonthlyIncome
+#X7:NumberOfOpenCreditLinesAndLoans
+#X8:NumberOfTimes90DaysLate
+#X9:NumberRealEstateLoansOrLines
+#X10:NumberOfTime60-89DaysPastDueNotWorse
+#X11:NumberOfDependents
+```
+
+Multicolinerality isn't a big problem for classification for certain models.
+For logistic regression we may use regularization to fix it.
+
+
+# IV. Databalance
+
+As we see above, we have a serious imbalanced classes. It could cause problems for many algorithm sentitive to this imbalanced.
+```{r}
+prop.table(table(training_DataClear$SeriousDlqin2yrs))
+barplot(prop.table(table(training_DataClear$SeriousDlqin2yrs)), col="red")
+```
+
+
+Observation: we have seen the problem below with logistic regression  with an exellent prediction of the observations but a large numbers of false negatives (the worst kind of error in this case) and randomForest, with a confusion matrix completely imbalanced et and a poor performance, that's why we came back to the preprocessing part to solve it.
+We decided that it would be better for our problem to train on data with more defaulters present. Thus we decided to selectively sample our training set so defaulters and non-defaulters were more equally represented
+in our training data.
+
+To solve the problem of imbalanced data, we have these solutions:
+- downsampling (or undersampling) creates a balanced dataset by matching the number of samples in the minority class with a random sample from the majority class. 
+- upsampling (or oversampling) matches the number of samples in the majority class with resampling from the minority class
+- smote
+- rose
+
+For this project, we'll try all of them first to see wich one gives the best result.
+
+```{r}
+sum(training_median$SeriousDlqin2yrs==1)
+sum(training_median$SeriousDlqin2yrs==0)
+```
+
+Downsampling manually.
+```{r}
+down1<-training_median[training_median$SeriousDlqin2yrs==1,]
+down0<-training_median[training_median$SeriousDlqin2yrs==0,]
+downsammpling<-sample(1:139007,9951)
+
+training_DataB<-rbind(down1,down0[downsammpling,])
+training_DataB<-training_DataB[sample(nrow(training_DataB)),]
+rownames(training_DataB)<-NULL
+```
+
+```{r}
+prop.table(table(training_DataB$SeriousDlqin2yrs))
+sum(training_DataB$SeriousDlqin2yrs==1)
+sum(training_DataB$SeriousDlqin2yrs==0)
+barplot(prop.table(table(training_DataB$SeriousDlqin2yrs)), col="green")
+```
+
+notice:
+In reality though, we should not simply perform over- or under-sampling on our training data and then run the model. 
+We need to account for cross-validation and perform over- or under-sampling on each fold independently to get an honest estimate of model performance! (like repeat CV)
+
+(caret library includes downsampling, we'll use it later)
+
+
+Conclusion:
+Always clean your data, the data has to be in the best condition before modeling otherwise a mistake at this level can be costly. (proof: we have to redo most of the algorithms in missing values procesing and imbalanced dataset problem).
+
+
+Training data = 150,000
+Test data = 100,000
+Split Ratio:
+Training data: 0.6
+Test data : 0.4
+
+Now, let's build our first model.
+
+\newpage
+# V.Logistic Regression Model
+
+Definition:
+Consider a data where the response fall into one of two categories. Yes or No. Rather than modeling the response Y directly, logistic regression models the probability that Y belongs to a particular category.
+
+Logistic regression is a technique that is well suited for examining the relationship between a categorical response variable and one or more categorical or continuous predictor variables. The model is generally presented in the following format, where ?? refers to the parameters and x represents the independent variables.
+
+log(odds)=??0+??1???x1+...+??n???xn
+
+The log(odds), or log-odds ratio, is defined by ln[p/(1???p)] and expresses the natural logarithm of the ratio between the probability that an event will occur, p(Y=1), to the probability that it will not occur. We are usually concerned with the predicted probability of an event occuring and that is defined by p=1/1+exp^???z, where z=??0+??1???x1+...+??n???xn
+
+We have a classification problem (delinquent or not), so we'll try first a simple model: logistic regression model.
+
+We don't use the test set here because it has also missing values so we'll start with our training_DataClear.
+
+## 1. Comparison balanced/imbalanced class
+
+## A) Imbalanced classes
+
+Let's see first who imbalanced data can be really bad for our algorithm
+```{r}
+library(caTools) # install it first in the console
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(training_median$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 70% of the dataset,
+# and 30% for the test set.
+training_setI = subset(training_median, split == TRUE)
+# we use subset to split the dataset
+test_setI = subset(training_median, split == FALSE)
+```
+
+
+```{r}
+#Logistic regression model for an imbalanced dataset
+mod_imb <- glm(SeriousDlqin2yrs~.,data=training_setI, family="binomial")
+summary(mod_imb)
+anova(mod_imb, test="Chisq")
+```
+
+```{r}
+#probability of default (prediction)
+prob_imb <- predict(mod_imb, newdata=subset(test_setI, select=c(2,3,4,5,6,7,8,9,10,11)), type="response")
+prob_imb <- ifelse(prob_imb > 0.5,1,0)
+#confusion matrix
+library(caret)
+threshold <- 0.5
+confusionMatrix(factor(prob_imb>threshold), factor(test_setI$SeriousDlqin2yrs==1), positive="TRUE")
+#accuracy
+misClasificError <- mean(prob_imb != test_setI$SeriousDlqin2yrs)
+print(paste("Accuracy",1-misClasificError))
+```
+
+```{r}
+#ROC Curve
+library(ROCR)
+prob_imb <- predict(mod_imb, newdata=subset(test_setI, select=c(2,3,4,5,6,7,8,9,10,11)), type="response")
+pr_imb <- prediction(prob_imb, test_setI$SeriousDlqin2yrs)
+prf_imb <- performance(pr_imb, measure = "tpr", x.measure = "fpr")
+plot(prf_imb)
+auc <- performance(pr_imb, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+
+
+We found an excellent accuracy and good ROC but a low Kappa. That's the reason we ignore first the imbalanced problem because of this good results. We didn't realize first the unbalanced in the confusion matrix (7:1) and the significance of Kappa value.
+It's easy to achieve 93% accuracy on a data set where 93% of objects is in the same class. That's why accuracy is irrelevant for us with an unbalanced problem. We'll use ROC AUC and ROC to evaluate the models.
+
+## B) Balanced classes
+Let's see the difference with balanced dataset.
+
+```{r}
+library(caTools) # install it first in the console
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(training_DataB$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 70% of the dataset,
+# and 30% for the test set.
+training_setB = subset(training_DataB, split == TRUE)
+# we use subset to split the dataset
+test_setB = subset(training_DataB, split == FALSE)
+```
+
+```{r}
+#Logistic regression model for an balanced dataset
+mod_bal <- glm(SeriousDlqin2yrs~.,data=training_setB, family="binomial")
+summary(mod_bal)
+anova(mod_bal, test="Chisq")
+```
+
+```{r}
+#probability of default (prediction)
+prob_bal <- predict(mod_bal,newdata=subset(test_setB,select=c(2,3,4,5,6,7,8,9,10,11)),type="response")
+prob_bal <- ifelse(prob_bal > 0.5,1,0)
+#confusion matrix
+library(caret)
+threshold <- 0.5
+confusionMatrix(factor(prob_bal>threshold), factor(test_setB$SeriousDlqin2yrs==1), positive="TRUE")
+#accuracy
+misClasificError <- mean(prob_bal != test_setB$SeriousDlqin2yrs)
+print(paste("Accuracy",1-misClasificError))
+```
+As expected, this accuracy drops when we balance the class, it's a more realistic result.
+
+```{r}
+#ROC Curve
+library(ROCR)
+p_bal <- predict(mod_bal, newdata=subset(test_setB,select=c(2,3,4,5,6,7,8,9,10,11)), type="response")
+pr_bal <- prediction(p_bal, test_setB$SeriousDlqin2yrs)
+prf_bal <- performance(pr_bal, measure = "tpr", x.measure = "fpr")
+plot(prf_bal)
+
+auc <- performance(pr_bal, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+Well, we have a less good accuracy due to less data information but the Kappa and confusion matrix look quite normal.
+Accuracy is not the metric to use when working with an imbalanced dataset. We have seen that it is misleading.
+Sometimes it may be desirable to select a model with a lower accuracy because it has a greater predictive power on the problem.
+in a problem where there is a large class imbalance, a model can predict the value of the majority class for all predictions and achieve a high classification accuracy, the problem is that this model is not useful in the problem domain.
+This is called the Accuracy Paradox. For problems like this, this additional measures are required to evaluate a classifier.
+There are metrics that have been designed to tell you a more truthful story when working with imbalanced classes:
+precison, recall, F1-score and Kappa.
+This is the logistic regression model, it's quite a good result but we split the data manually and downsampling is only make once so it's not really precise. 
+Let's compare with another model.
+
+## 2. Comparison between the methods of resampling
+
+resampling techniques
+other than the simple training/test set
+
+Function to get the area under the curve
+```{r}
+library(pROC)
+test_roc <- function(model, data) {
+  
+  roc(data$SeriousDlqin2yrs,
+      predict(model, data, type = "prob")[, 1])
+
+}
+```
+
+Caret package is quite useful and contains machine learning models, resampling techniques...
+```{r}
+library(caret)
+getModelInfo()$glm$type
+```
+This tells us that glm supports both regression and classification. As this is a binary classification, we need to force glm into using the classification mode. We do this by changing the outcome variable to a factor (we use a copy of the outcome as we'll need the original one for our next model):
+glm= generalized linear model (linear regression and logistic regression)
+```{r}
+str(training_DataB)
+```
+
+X2=1, 2=1
+X1=0, 0=1
+```{r}
+outcomeName <- 'SeriousDlqin2yrs'
+predictorsNames <- names(training_DataB)[names(training_DataB) != outcomeName]
+training_DataB$SeriousDlqin2yrs <- as.factor(training_DataB$SeriousDlqin2yrs)
+
+str(training_DataB)
+feature.names=names(training_DataB)
+for (f in feature.names) {
+  if (class(training_DataB[[f]])=="factor") {
+    levels <- unique(c(training_DataB[[f]]))
+    training_DataB[[f]] <- factor(training_DataB[[f]],
+                   labels=make.names(levels))
+  }
+}
+```
+
+```{r}
+library(caret)
+intrain <- createDataPartition(y=training_DataB$SeriousDlqin2yrs, p=0.7, list=FALSE)
+train <- training_DataB[intrain, ]
+test <- training_DataB[-intrain, ]
+# Create model weights (they sum to one)
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     repeats = 10,
+                     summaryFunction = twoClassSummary,
+                     savePredictions = TRUE,
+                     classProbs = TRUE)
+set.seed(5627)
+
+orig_fit <- train(SeriousDlqin2yrs ~ .,
+                  data = train,
+                  method = "glm", 
+                  family="binomial",
+                  metric = "ROC",
+                  trControl = ctrl)
+
+```
+
+```{r}
+orig_fit
+```
+```{r}
+#confusion matrix
+prob <- predict(orig_fit, test[,predictorsNames], type='raw')
+confusionMatrix(prob, test[,outcomeName])
+```
+
+```{r}
+#original
+print("Original")
+orig_fit %>%
+test_roc(data = test) %>%
+  auc()
+```
+
+```{r}
+test_setI$SeriousDlqin2yrs <- as.factor(test_setI$SeriousDlqin2yrs)
+str(test_setI)
+
+feature.names=names(test_setI)
+for (f in feature.names) {
+  if (class(test_setI[[f]])=="factor") {
+    levels <- unique(c(training_setI[[f]]))
+    test_setI[[f]] <- factor(test_setI[[f]],
+                   labels=make.names(levels))
+  }
+}
+```
+
+Now, let's see all the techniques to solve the imbalanced problem. Until here we only see downsampling manually but the library caret contains all the techniques et can be make automatically.
+```{r}
+set.seed(123)
+training_setI$SeriousDlqin2yrs <- as.factor(training_setI$SeriousDlqin2yrs)
+str(training_setI)
+
+feature.names=names(training_setI)
+for (f in feature.names) {
+  if (class(training_setI[[f]])=="factor") {
+    levels <- unique(c(training_setI[[f]]))
+    training_setI[[f]] <- factor(training_setI[[f]],
+                   labels=make.names(levels))
+  }
+}
+model_weights <- ifelse(training_setI$SeriousDlqin2yrs == 1,
+                        (1/table(training_setI$SeriousDlqin2yrs)[1]) * 0.5,
+                        (1/table(training_setI$SeriousDlqin2yrs)[2]) * 0.5)
+
+# Use the same seed to ensure same cross-validation splits
+
+ctrl$seeds <- orig_fit$control$seeds
+
+# Build weighted model
+
+weighted_fit <- train(SeriousDlqin2yrs ~ .,
+                      data = training_setI,
+                      method = "glm",
+                      family="binomial",
+                      weights = model_weights,
+                      metric = "ROC",
+                      trControl = ctrl)
+confusionMatrix(weighted_fit)
+
+# Build down-sampled model
+
+ctrl$sampling <- "down"
+
+down_fit <- train(SeriousDlqin2yrs ~ .,
+                  data = training_setI,
+                  method = "glm",
+                  family="binomial",
+                  metric = "ROC",
+                  trControl = ctrl)
+confusionMatrix(down_fit)
+# Build up-sampled model
+
+ctrl$sampling <- "up"
+
+up_fit <- train(SeriousDlqin2yrs ~ .,
+                  data = training_setI,
+                  method = "glm",
+                  family="binomial",
+                  metric = "ROC",
+                  trControl = ctrl)
+confusionMatrix(up_fit)
+# Build smote model
+
+# ctrl$sampling <- "smote"
+# 
+# smote_fit <- train(SeriousDlqin2yrs ~ .,
+#                   data = training_setI,
+#                   method = "glm",
+#                   family="binomial",
+#                   metric = "ROC",
+#                   trControl = ctrl)
+# confusionMatrix(smote_fit)
+```
+
+```{r}
+weighted_fit
+up_fit
+down_fit
+# smote_fit
+```
+
+
+```{r}
+#weighted
+print("Weighted")
+weighted_fit %>%
+test_roc(data = test_setI) %>%
+  auc()
+#downsampling
+print("Downsampling")
+down_fit %>%
+test_roc(data = test_setI) %>%
+  auc()
+#upsampling
+print("Upsampling")
+up_fit %>%
+test_roc(data = test_setI) %>%
+  auc()
+#smote
+# print("Smote")
+# smote_fit %>%
+# test_roc(data = test_setI) %>%
+#   auc()
+```
+
+They all give great results but in reasion of time computation we'll choose for further training model the downsampling with the cv-repeated for more accurate results.
+
+
+## 3) Comparison between the methods of imputation
+
+## A) Case deletion
+```{r}
+library(caTools) # install it first in the console
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(training_deletion$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 70% of the dataset,
+# and 30% for the test set.
+training_setD = subset(training_deletion, split == TRUE)
+# we use subset to split the dataset
+test_setD = subset(training_deletion, split == FALSE)
+```
+
+
+```{r}
+set.seed(123)
+training_setD$SeriousDlqin2yrs <- as.factor(training_setD$SeriousDlqin2yrs)
+str(training_setD)
+
+feature.names=names(training_setD)
+for (f in feature.names) {
+  if (class(training_setD[[f]])=="factor") {
+    levels <- unique(c(training_setD[[f]]))
+    training_setD[[f]] <- factor(training_setD[[f]],
+                   labels=make.names(levels))
+  }
+}
+
+```
+
+```{r}
+ctrl$sampling <- "down"
+
+down_fitD <- train(SeriousDlqin2yrs ~ .,
+                  data = training_setD,
+                  method = "glm",
+                  family="binomial",
+                  metric = "ROC",
+                  trControl = ctrl)
+confusionMatrix(down_fitD)
+```
+
+```{r}
+down_fitD
+```
+
+```{r}
+#downsampling
+print("Downsampling")
+down_fitD %>%
+test_roc(data = test_setD) %>%
+  auc()
+```
+Less AUC than with the median method.
+
+## B) Case gbm
+
+```{r}
+library(caTools) # install it first in the console
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(training_gbm$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 70% of the dataset,
+# and 30% for the test set.
+training_setGBM = subset(training_gbm, split == TRUE)
+# we use subset to split the dataset
+test_setGBM = subset(training_gbm, split == FALSE)
+```
+
+
+```{r}
+set.seed(123)
+training_setGBM$SeriousDlqin2yrs <- as.factor(training_setGBM$SeriousDlqin2yrs)
+str(training_setGBM)
+
+feature.names=names(training_setGBM)
+for (f in feature.names) {
+  if (class(training_setGBM[[f]])=="factor") {
+    levels <- unique(c(training_setGBM[[f]]))
+    training_setGBM[[f]] <- factor(training_setGBM[[f]],
+                   labels=make.names(levels))
+  }
+}
+
+```
+
+```{r}
+down_fitGBM <- train(SeriousDlqin2yrs ~ .,
+                  data = training_setGBM,
+                  method = "glm",
+                  family="binomial",
+                  metric = "ROC",
+                  trControl = ctrl)
+confusionMatrix(down_fitGBM)
+```
+
+```{r}
+down_fitGBM
+```
+
+```{r}
+#downsampling
+print("Downsampling")
+down_fitGBM %>%
+test_roc(data = test_setGBM) %>%
+  auc()
+```
+
+We get the highest value of AUC with the gbm method as expected, in the same conditions for all the methods.
+In conclusion, we decide to choose this dataset to train our model.
+
+## 4. Optimization of logistic regression
+
+## A) Comparison with other model
+
+We'll see a little further if the model is better with only the "best" variables thanks to AIC criteria.
+First, we see check if one model is better with less variables than the other ( we only remove the insignificant variables)
+```{r}
+library(caTools) # install it first in the console
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(training_gbm$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 75% of the dataset,
+# and 30% for the test set.
+training_setB = subset(training_gbm, split == TRUE)
+# we use subset to split the dataset
+test_setB = subset(training_gbm, split == FALSE)
+```
+
+```{r}
+library(ROCR)
+mod_fit1 <- glm(SeriousDlqin2yrs ~ RevolvingUtilizationOfUnsecuredLines + 
+    age + NumberOfTime30.59DaysPastDueNotWorse + DebtRatio + 
+    MonthlyIncome + NumberOfOpenCreditLinesAndLoans + NumberOfTimes90DaysLate + 
+    NumberRealEstateLoansOrLines + NumberOfTime60.89DaysPastDueNotWorse + 
+    NumberOfDependents,data=training_setB, family="binomial")
+summary(mod_fit1)
+pred.proba1 <- predict(mod_fit1, newdata=subset(test_setB,select=c(2,3,4,5,6,7,8,9,10,11)),type="response")
+p1 <- pred.proba1
+pred.proba1 <- factor(ifelse(pred.proba1 >0.5, 1, 0))
+confusionMatrix(data=pred.proba1, test_setB$SeriousDlqin2yrs)
+pr1 <- prediction(p1, test_setB$SeriousDlqin2yrs)
+prf1 <- performance(pr1, measure = "tpr", x.measure = "fpr")
+plot(prf1, col="red")
+
+mod_fit2 <- glm(SeriousDlqin2yrs ~ RevolvingUtilizationOfUnsecuredLines + NumberOfTime30.59DaysPastDueNotWorse  + 
+    MonthlyIncome + NumberOfTimes90DaysLate , data=training_setB, family="binomial")
+summary(mod_fit2)
+pred.proba2 <- predict(mod_fit2, newdata=subset(test_setB,select=c(2,3,4,5,6,7,8,9,10,11)),type="response")
+p2 <- pred.proba2
+pred.proba2 <- factor(ifelse(pred.proba2 >0.5, 1, 0))
+confusionMatrix(data=pred.proba2, test_setB$SeriousDlqin2yrs)
+pr2 <- prediction(p2, test_setB$SeriousDlqin2yrs)
+prf2 <- performance(pr2, measure = "tpr", x.measure = "fpr")
+plot(prf2, add = TRUE, col="blue")
+
+legend("bottomright",legend=c("modèle 1","modèle 2"),
+       col=c("red", "blue"), lty=1:2, cex=0.8)
+```
+
+
+
+## B) AIC criteria
+
+Selection of variables - Backward - Optimization of AIC criteria
+backward= model with all variables
+
+```{r}
+library(MASS)
+modele.back <- stepAIC(mod_fit1, scope=list(lower="SeriousDlqin2yrs ~ 1", upper= "SeriousDlqin2yrs ~ RevolvingUtilizationOfUnsecuredLines + 
+    age + NumberOfTime30.59DaysPastDueNotWorse + DebtRatio + 
+    MonthlyIncome + NumberOfOpenCreditLinesAndLoans + NumberOfTimes90DaysLate + 
+    NumberRealEstateLoansOrLines + NumberOfTime60.89DaysPastDueNotWorse + 
+    NumberOfDependents"), direction = "backward")
+print(modele.back)
+```
+
+Selection of variables - Forward - Optimization of AIC criteria
+forward= model with one variable
+
+```{r}
+modele.trivial <- glm(SeriousDlqin2yrs ~ 1, data=training_setB, family=binomial)
+summary(modele.trivial)
+modele.forward <- stepAIC(modele.trivial, scope=list(lower="SeriousDlqin2yrs ~ 1", upper= "SeriousDlqin2yrs ~ RevolvingUtilizationOfUnsecuredLines + 
+    age + NumberOfTime30.59DaysPastDueNotWorse + DebtRatio + 
+    MonthlyIncome + NumberOfOpenCreditLinesAndLoans + NumberOfTimes90DaysLate + 
+    NumberRealEstateLoansOrLines + NumberOfTime60.89DaysPastDueNotWorse + 
+    NumberOfDependents"), direction = "forward")
+print(modele.forward)
+```
+
+Well, apparently the best model for logistic regression is with all variables because it has the smallest AIC.
+
+
+Let's try random forest now.
+
+\newpage
+# V. Random Forest
+
+- Random Forest developed by aggregating trees
+- Can be used for classification or regression
+- avois overfitting
+- can deal with large number of features
+- helps with feature selection based on importance
+- user-friendly: only 2 free parameters:
+    - trees - ntree, default 500
+    - variables randomly sampled as candidates at each split - mtry default is sq.root(p) for classffication and p/3 for regression
+
+How it works?
+
+- draw ntree bootstrap samples
+- for each bootstrap sample, grow un-pruned tree by choossing best split based on a random sample of mtry predictors at each node
+- predict new data using majority votes for classification and average for regression based on ntree trees.
+
+4 hyperparameters:
+- the number of trees in the forest (n_estimators).
+- the number of features to consider at each split. By default: square root of total number of features (max_features or mtry).
+- the maximum depth of a tree i.e. number of nodes (max_depth).
+- the minimum number of samples required to be at a leaf node / bottom of a tree (min_samples_leaf).
+
+
+high strength of tree = low error rate of individual tree classifier
+
+mtry = number of variables selected at each split
+ (for classfication= floor(sqrt(no. of independent variables or features))
+  for regression p/3)
+lower mtry means 
+- less correlations between variables (good thing)
+- decreases strenght of each tree (bad thing)
+We have to make a compromise, optimisation.
+
+## 1. First random forest
+
+
+Now, let's see how random forest works in pratice.
+
+```{r}
+down1<-training_gbm[training_gbm$SeriousDlqin2yrs==1,]
+down0<-training_gbm[training_gbm$SeriousDlqin2yrs==0,]
+downsammpling<-sample(1:139007,9951)
+
+training_DataB<-rbind(down1,down0[downsammpling,])
+training_DataB<-training_DataB[sample(nrow(training_DataB)),]
+rownames(training_DataB)<-NULL
+```
+
+
+```{r}
+library(caTools) # install it first in the console
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(training_DataB$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 75% of the dataset,
+# and 25% for the test set.
+training_setB = subset(training_DataB, split == TRUE)
+# we use subset to split the dataset
+test_setB = subset(training_DataB, split == FALSE)
+```
+
+```{r}
+names(training_setB)<-c('SeriousDlqin2yrs','F1','F2','F3','F4','F5'
+                     ,'F6','F7','F8','F9','F10')
+names(test_setB)<-c('SeriousDlqin2yrs','F1','F2','F3','F4','F5'
+,'F6','F7','F8','F9','F10')
+```
+
+
+```{r}
+library(randomForest, warn.conflicts = FALSE)
+set.seed(222)
+training_setB$SeriousDlqin2yrs <- as.factor(training_setB$SeriousDlqin2yrs)
+mod_rf <-randomForest(SeriousDlqin2yrs~., data=training_setB, ntree=500, mtry=2, importance=TRUE)
+print(mod_rf)
+```
+The class is balanced but the oob error rate is 20%, we have to improve it.
+
+
+```{r}
+library(ROCR)
+pred_forest<-predict(mod_rf,newdata = test_setB[,-1],'prob')
+output<-pred_forest[,2]
+pr <- ROCR::prediction(output, test_setB$SeriousDlqin2yrs)
+prf2 <- ROCR::performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf2)
+auc <- ROCR::performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+We have a good auc despite of the oob error rate.
+
+We'll try now to optimize the random forest model.
+
+Variable importance
+
+```{r}
+varImpPlot(mod_rf)
+```
+Random forests can be used to rank the importance of variables in a regression or classification problem. 
+MeanDecreaseAccuracy table represents how much removing each variable reduces the accuracy of the model.
+Gini Index - It's a measure of node purity. If the Gini index takes on a smaller value, it suggests that the node is pure. For a split to take place, the Gini index for a child node should be less than that for the parent node.
+```{r}
+mod_rf$importance
+```
+Importance of the variables of the dataset for the random forest model.
+
+## 2. Optimization of random forest
+
+Hyperparameters tuning
+We did it manually, there is many methods like grid search which allow to use many values and combinations for hyperparameters but because of the size of the dataset, we failed to implement it.
+The goal is to minimize the oob error rate, it's an indication of the good values for the hyperparameters.
+The number of variables selected at each split is denoted by mtry in randomforest function.
+
+```{r}
+library(caret)
+mtry <- tuneRF(training_setB[-1],training_setB$SeriousDlqin2yrs, ntreeTry=500,
+               stepFactor=2,improve=0.01, trace=TRUE, plot=TRUE)
+best.m <- mtry[mtry[, 2] == min(mtry[, 2]), 1]
+print(mtry)
+print(best.m)
+```
+
+ntree, the number of the trees build by the model.
+```{r}
+plot(mod_rf$err.rate[, 1], type = "l", xlab = "nombre d'arbres", ylab = "erreur OOB")
+```
+
+nodesize correspond to the depth of the tree.
+```{r}
+library(randomForest, warn.conflicts = FALSE)
+set.seed(222)
+mod_rf <-randomForest(SeriousDlqin2yrs~., data=training_setB, ntree=500, mtry=2,nodesize=4, importance=TRUE)
+print(mod_rf)
+```
+
+```{r}
+library(ROCR)
+pred_forest<-predict(mod_rf,newdata = test_setB[,-1],'prob')
+output<-pred_forest[,2]
+pr <- ROCR::prediction(output, test_setB$SeriousDlqin2yrs)
+prf_rf <- ROCR::performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf_rf)
+auc <- ROCR::performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+\newpage
+# VI. Neural network
+```{r}
+down1<-training_gbm[training_gbm$SeriousDlqin2yrs==1,]
+down0<-training_gbm[training_gbm$SeriousDlqin2yrs==0,]
+downsammpling<-sample(1:139007,9951)
+
+training_DataB<-rbind(down1,down0[downsammpling,])
+training_DataB<-training_DataB[sample(nrow(training_DataB)),]
+rownames(training_DataB)<-NULL
+```
+
+
+
+```{r}
+library(caTools) # install it first in the console
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(training_DataB$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 75% of the dataset,
+# and 25% for the test set.
+training_setB = subset(training_DataB, split == TRUE)
+# we use subset to split the dataset
+test_setB = subset(training_DataB, split == FALSE)
+```
+
+```{r}
+library(neuralnet)
+n <- names(training_setB)
+f <- as.formula(paste("SeriousDlqin2yrs ~", paste(n[!n %in% "SeriousDlqin2yrs"], collapse = " + ")))
+nn <- neuralnet(f, data=training_setB, hidden=1, linear.output=F)
+```
+Neural network is difficul to make it work, we have to find the right values of the hyperparameters to its running.
+Hyperparameters:
+- Number of layers
+- Different parameters for each layer (number of hidden units, filter size for convolutional layer and so on)
+- Type of activation functions
+- Parameter initialization method
+- Learning rate
+- Loss function
+
+```{r}
+library(neuralnet)
+set.seed(123)
+n <- names(training_setB)
+f <- as.formula(paste("SeriousDlqin2yrs ~", paste(n[!n %in% "SeriousDlqin2yrs"], collapse = " + ")))
+mod_nn <- neuralnet(f, data=training_setB, hidden=1, err.fct = "ce", linear.output = FALSE, stepmax = 10000, lifesign = "full", threshold = 0.1)
+plot(mod_nn)
+```
+
+```{r}
+#prediction
+prob_nn <- compute(mod_nn, test_setB[,-1])
+prob_nn <- prob_nn$net.result
+pred2 <- ifelse(prob_nn>0.5, 1, 0)
+tab2 <- table(pred2, test_setB$SeriousDlqin2yrs)
+tab2
+1-sum(diag(tab2))/sum(tab2)
+```
+Not the results expected, we have to optimize the algorithm.
+
+\newpage
+# VII. GBM (Gradient Boosted Machines)
+
+```{r}
+down1<-training_gbm[training_gbm$SeriousDlqin2yrs==1,]
+down0<-training_gbm[training_gbm$SeriousDlqin2yrs==0,]
+downsammpling<-sample(1:139007,9951)
+
+training_DataB<-rbind(down1,down0[downsammpling,])
+training_DataB<-training_DataB[sample(nrow(training_DataB)),]
+rownames(training_DataB)<-NULL
+```
+
+
+
+
+For a gradient boosting machine (GBM) model, there are three main tuning parameters:
+- number of iterations, i.e. trees, (called n.trees in the gbm function)
+- complexity of the tree, called interaction.depth
+- learning rate: how quickly the algorithm adapts, called shrinkage
+- the minimum number of training set samples in a node to commence splitting (n.minobsinnode)
+
+```{r}
+# # gbm -----------------------------------------------------------------
+# gbm_Data <- training_DataB
+# names(gbm_Data)<-c('SeriousDlqin2yrs','F1','F2','F3','F4','F5'
+#                      ,'F6','F7','F8','F9','F10')
+# 
+# library(caret)
+# library(ggplot2)
+# 
+# gbmGrid<-expand.grid(interaction.depth=c(1,2,3,4,5)
+#                      ,shrinkage=c(0.01,0.001,0.0001)
+#                      ,n.trees=(1:50)*100
+#                      ,n.minobsinnode = 10)
+# 
+# ctrl_gbm <- trainControl(method = "cv"
+#                            ,number = 10
+#                            ,classProbs = TRUE
+#                            ,summaryFunction = twoClassSummary)
+# 
+# gbm_Data$SeriousDlqin2yrs[gbm_Data$SeriousDlqin2yrs=='1']<-'Yes'
+# gbm_Data$SeriousDlqin2yrs[gbm_Data$SeriousDlqin2yrs=='0']<-'No'
+# gbm_Data$SeriousDlqin2yrs<-as.factor(gbm_Data$SeriousDlqin2yrs)
+# str(training_DataB$SeriousDlqin2yrs)
+# set.seed(123) 
+# 
+# mod_gbm <- train(SeriousDlqin2yrs~.
+#                     ,data = gbm_Data
+#                     ,method = "gbm"
+#                     ,trControl = ctrl_gbm
+#                     ,verbose = TRUE
+#                     ,tuneGrid = gbmGrid
+#                     ## Specify which metric to optimize
+#                     , metric = 'ROC'
+#                     , train.fraction = 0.5
+#                     )
+# 
+# summary(mod_gbm)
+# plot(mod_gbm, metric='ROC',plotType='level')
+# ggplot(mod_gbm)
+# (mod_gbm$bestTune)
+```
+
+```{r}
+library(caTools) # install it first in the console
+gbm_Data1 <- training_DataB
+
+set.seed(123)
+# we use this function with the same number
+# to randomly generate the same values
+split = sample.split(gbm_Data1$SeriousDlqin2yrs, SplitRatio = 0.70)
+# here we chose the SplitRatio to 75% of the dataset,
+# and 25% for the test set.
+training_setB = subset(gbm_Data1, split == TRUE)
+# we use subset to split the dataset
+test_setB = subset(gbm_Data1, split == FALSE)
+```
+
+
+```{r}
+# fitting the best selected gbm
+library(pROC)
+library(gbm)
+gbm.credit<-gbm(SeriousDlqin2yrs~.    
+                
+                ,data = training_setB
+                ,distribution = 'bernoulli'
+                ,n.trees = 3500
+                ,interaction.depth = 5
+                ,shrinkage = 0.01
+                ,n.minobsinnode = 10
+                ,verbose = TRUE
+                ,cv.folds = 5
+                ,class.stratify.cv = TRUE
+                ,n.cores = 2 
+                ,train.fraction = 0.8
+                
+)
+```
+
+
+```{r}
+# best.iter<-gbm.perf(gbm.credit, method = 'cv')
+
+prob_gbm <- predict(gbm.credit, newdata=subset(test_setB,select=c(2,3,4,5,6,7,8,9,10,11)), type = "response")
+prob_gbm <- ifelse(prob_gbm > 0.5,1,0)
+#confusion matrix
+library(caret)
+threshold <- 0.5
+confusionMatrix(factor(prob_gbm>threshold), factor(test_setB$SeriousDlqin2yrs==1), positive="TRUE")
+#accuracy
+misClasificError <- mean(prob_gbm != test_setB$SeriousDlqin2yrs)
+print(paste("Accuracy",1-misClasificError))
+
+#ROC Curve
+library(ROCR)
+prob_gbm <- predict(gbm.credit, newdata=subset(test_setB,select=c(2,3,4,5,6,7,8,9,10,11)), type="response")
+pr_gbm <- ROCR::prediction(prob_gbm, test_setB$SeriousDlqin2yrs)
+prf_gbm <- performance(pr_gbm, measure = "tpr", x.measure = "fpr")
+plot(prf_gbm)
+
+auc <- performance(pr_gbm, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+```
+
+\newpage
+
+# VIII. XGBoost (Xtreme Gradiant Boosting)
+down1<-training_gbm[training_gbm$SeriousDlqin2yrs==1,]
+down0<-training_gbm[training_gbm$SeriousDlqin2yrs==0,]
+downsammpling<-sample(1:139007,9951)
+
+training_DataB<-rbind(down1,down0[downsammpling,])
+training_DataB<-training_DataB[sample(nrow(training_DataB)),]
+rownames(training_DataB)<-NULL
+```{r}
+newtrainDat<-training_gbm[training_gbm$SeriousDlqin2yrs==1,]
+DownsampleDat<-training_gbm[training_gbm$SeriousDlqin2yrs==0,]
+downsam<-sample(1:139007,9951)
+
+nDat<-rbind(newtrainDat,DownsampleDat[downsam,])
+nDat<-nDat[sample(nrow(nDat)),]
+rownames(nDat)<-NULL
+
+```
+
+```{r}
+library(caret)
+set.seed(36)
+trainIndex <- createDataPartition(nDat$SeriousDlqin2yrs, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+ntrain<-nDat[trainIndex,]
+ntest<-nDat[-trainIndex,]
+```
+
+```{r}
+library(reshape2)
+
+# melting the data frame
+feature.names<-names(nDat)[-1]
+
+vizDat<- melt(nDat,id.vars = 'SeriousDlqin2yrs'
+              ,measure.vars = feature.names, variable.name = "Feature"
+              ,value.name = "Value")
+
+```
+
+```{r}
+# lets look at the data in the first two principal components
+
+nDat.s<- scale(nDat[,-1],center=TRUE, scale=TRUE)
+Dat.pc<-prcomp(nDat.s)
+summary(Dat.pc)
+# pr1 and pr2 only explain 36% of the variance but still 
+# lets look at the distribution of for fun
+plot(Dat.pc$x[,1:2],col=as.factor(nDat[,1]))
+
+# nope! no clear distinction
+
+# lets try a 3d scatter plot since the first three prcomps explain
+# 48.64% of the variance
+library(car)
+library(rgl)
+scatter3d(x = Dat.pc$x[,1], y = Dat.pc$x[,2], z = Dat.pc$x[,3]
+          , groups = as.factor(nDat[,1]),
+grid = FALSE, surface = FALSE)
+```
+
+
+```{r}
+library(xgboost)
+
+dtrain <- xgb.DMatrix(data = as.matrix(ntrain[,-1])
+                      , label = as.numeric(ntrain$SeriousDlqin2yrs))
+
+dtest<- xgb.DMatrix(data = as.matrix(ntest[,-1])
+                    , label = as.numeric(ntest$SeriousDlqin2yrs))
+
+watchlist <- list(train=dtrain, test=dtest)
+
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.3, gamma=0, max_depth=8, min_child_weight=9.5, subsample=0.928, colsample_bytree=0.652)
+
+bst <- xgb.train(params = params, data = dtrain, nrounds = 2000, watchlist = watchlist, print.every.n = 10, early.stop.round = 10, maximize = F , eval_metric = "error")
+
+print(xgb.importance(model = bst))
+xgb.plot.importance(importance_matrix = xgb.importance(model = bst))
+
+pred.xg<-predict(bst,dtest)
+pr <- ROCR::prediction(pred.xg, ntest$SeriousDlqin2yrs)
+prf5 <- performance(pr, measure = "tpr", x.measure = "fpr")
+```
+
+```{r}
+plot(prf5)
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+```{r}
+xgbcv <- xgb.cv( params = params, data = dtrain, nrounds = 2000, nfold = 5, showsd = T, stratified = T, print.every.n = 10, early.stop.round = 20, maximize = F)
+```
+
+```{r}
+mat <- xgb.importance (feature_names = colnames(dtrain),model = bst)
+xgb.plot.importance (importance_matrix = mat[1:10]) 
+
+```
+
+## Hyperparameters tuning
+
+```{r}
+setDT(ntrain) 
+setDT(ntest)
+```
+
+```{r}
+labels <- ntrain$SeriousDlqin2yrs 
+ts_label <- ntest$SeriousDlqin2yrs
+ new_tr <- model.matrix(~.+0,data = ntrain[,-c("SeriousDlqin2yrs"),with=F]) 
+ new_ts <- model.matrix(~.+0,data = ntest[,-c("SeriousDlqin2yrs"),with=F])
+```
+
+```{r}
+labels <- as.numeric(labels)
+ts_label <- as.numeric(ts_label)
+```
+
+```{r}
+dtrain <- xgb.DMatrix(data = new_tr,label = as.numeric(labels)) 
+dtest <- xgb.DMatrix(data = new_ts,label= as.numeric(ts_label))
+```
+
+```{r}
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+```
+
+```{r}
+library(xgboost)
+xgbcv <- xgb.cv( params = params, data = dtrain, nrounds = 100, nfold = 5, showsd = T, stratified = T, print.every.n = 10, early.stop.round = 20, maximize = F)
+##best iteration = 79
+```
+
+```{r}
+#first default - model training
+ xgb1 <- xgb.train (params = params, data = dtrain, nrounds = 34, watchlist = list(val=dtest,train=dtrain), print.every.n = 10, early.stop.round = 10, maximize = F , eval_metric = "error")
+#model prediction
+ xgbpred <- predict (xgb1,dtest)
+ xgbpred <- ifelse (xgbpred > 0.5,1,0)
+```
+
+```{r}
+ library(caret)
+ confusionMatrix (xgbpred, ts_label)
+#Accuracy - 86.54%` 
+
+#view variable importance plot
+ mat <- xgb.importance (feature_names = colnames(new_tr),model = xgb1)
+ xgb.plot.importance (importance_matrix = mat[1:20]) 
+```
+
+```{r}
+#convert characters to factors
+ fact_col <- colnames(ntrain)[sapply(ntrain,is.character)]
+
+ for(i in fact_col) set(ntrain,j=i,value = factor(train[[i]]))
+ for (i in fact_col) set(ntest,j=i,value = factor(test[[i]]))
+```
+
+```{r}
+library(mlr)
+#create tasks
+ traintask <- makeClassifTask (data = ntrain,target = "SeriousDlqin2yrs")
+ testtask <- makeClassifTask (data = ntest,target = "SeriousDlqin2yrs")
+
+```
+
+```{r}
+lrn <- makeLearner("classif.xgboost",predict.type = "response")
+lrn$par.vals <- list( objective="binary:logistic", eval_metric="error", nrounds=100L, eta=0.1)
+```
+
+```{r}
+params <- makeParamSet( makeDiscreteParam("booster",values = c("gbtree","gblinear")), makeIntegerParam("max_depth",lower = 3L,upper = 10L), makeNumericParam("min_child_weight",lower = 1L,upper = 10L), makeNumericParam("subsample",lower = 0.5,upper = 1), makeNumericParam("colsample_bytree",lower = 0.5,upper = 1))
+```
+
+```{r}
+rdesc <- makeResampleDesc("CV",stratify = T,iters=5L)
+```
+
+```{r}
+ctrl <- makeTuneControlRandom(maxit = 10L)
+```
+
+```{r}
+library(parallel)
+library(parallelMap) 
+parallelStartSocket(cpus = detectCores())
+```
+
+```{r}
+library(mlr)
+mytune <- tuneParams(learner = lrn, task = traintask, resampling = rdesc, measures = acc, par.set = params, control = ctrl, show.info = T)
+
+```
+
+```{r}
+mytune$y
+```
+
+```{r}
+lrn_tune <- setHyperPars(lrn,par.vals = mytune$x)
+
+#train model
+xgmodel <- train(learner = lrn_tune,task = traintask)
+
+#predict model
+xgpred <- predict(xgmodel,testtask)
+
+```
+
+```{r}
+library(caret)
+confusionMatrix(xgpred$data$response,xgpred$data$truth)
+```
+
+\newpage
+IX. Comparison of all the models
+
+```{r}
+#logistic regression
+plot(prf1, col="blue")
+#random forest
+plot(prf_rf, add = TRUE, col="green")
+#gbm
+plot(prf_gbm, add = TRUE, col="yellow")
+#xgboost
+plot(prf5, add = TRUE, col="red")
+legend("bottomright",legend=c("Logistic regression", "Random forest", "GBM", "XGBoost"), 
+       col=c("blue", "green", "yellow", "red"), lty=1:2, cex=0.8, title="Models", bg='lightblue')
+```
+
+\newpage
+Conclusion:
+Through this project, we make an introduction in advenced machine learning.
+This project was extremely enjoyable and presented the challenge of analyzing a vast amount of data to determine the best way to predict loan defaults. We learned more from our numerous errors.
+At first, we didn't pay much attention to the datapreprocessing of the data we are dealing with, thinking that our classification methods would be able to work trough this outliers, abnormal, mising values and imbalanced dataset.
+Advancing in the project and seeing more carefully the results, we were misleading by the very good results of accuracy but looking more carefully we saw that we only predict the non-default very well with a poor prediction of the default what we looking for.
+After this numerous mistakes, we know now that datapreprocessing is extremely important, we have to look about handling the missing values to get the best of our data and deal with the imbalanced dataset problem.
+We would like to spend more time on imputation even if we are satisfied, the optimization of implemented machine learning algorithms (not enough optimization for us) and on the interface (kNN for credit scoring failed to implement).
+We learned a lot from this project and from a MOOC (Stanford & Coursera Andrew Ng) in datascience, machine learning and credit scoring.
+
+We thank our mentor Mr. BRUNEL Vivien, for his trust and patience on this project.
+
+
+# Annexes
+
+## I. Models
+
+1. Models fitting
+High bias or High variance
+To improve our model, we have to find the tradeoff between bias-variance. 
+High bias = underfitting, the model don't present a very accurate picture of the relationship between input and prédicted output (outputting high error)
+High variance = overfitting, model is so accurate that it perfectly fitted the data but only this data and don't perform well to predict new examples.
+How do we know if our model has high bias or high variance?
+If our model has high error in both the train and test datasets, we know our model is underfitting both sets and has High Bias. 
+If our model has low error in the training set but high error in the test set, this is indicative of High Variance as your model has failed to generalize to the second set of data.
+If we can generate a model with overall low error in both your train (past) and test (future) datasets, we'll have found a model that is "Just Right" and balanced the right levels of bias and variance.
+And for big dataset, we have to find a tradeoff with computation time.
+
+![Tradeoff bias-variance.](images/tradeoff.png)
+
+Low precision or Low recall
+Even when you have high accuracy, it's possible that our machine learning model may be susceptible to other types of error.
+Precision is a measure of how often our predictions for the positive class are actually true.
+Recall is the measure of how often the actual positive class is predicted as such.
+The goal of a good machine learning model is to get the right balance of Precision and Recall, by trying to maximize the number of True Positives while minimizing the number of False Negatives and False Positives.
+
+![Confusion Matrix.](images/confusion_matrice.png)
+
+
+
+2.Evaluation metrics for classifier
+Threshold-dependent: This includes metrics like accuracy, precision, recall, and F1 score, which all require a confusion matrix to be calculated using a hard cutoff on predicted probabilities. These metrics are typically quite poor in the case of imbalanced classes, as statistical software inappropriately uses a default threshold of 0.50 resulting in the model predicting that all observations belong in the majority class.
+Threshold-invariant: This includes metrics like area under the ROC curve (AUC), which quantifies true positive rate as a function of false positive rate for a variety of classification thresholds. Another way to interpret this metric is the probability that a random positive instance will have a higher estimated probability than a random negative instance.
+
+ Accuracy is measured by the area under the ROC curve. An area of 1 represents a perfect test; an area of .5 represents a worthless test. A rough guide for classifying the accuracy of a diagnostic test is the traditional academic point system:
+
+    90-1 = excellent (A)
+    .80-.90 = good (B)
+    .70-.80 = fair (C)
+    .60-.70 = poor (D)
+    .50-.60 = fail (F)
+
+Kappa ordre de grandeur
+Kappa (or Cohen's kappa): Classification accuracy normalized by the imbalance of the classes in the data.
+Here, we have a very low value of Kappa. We see that the accuracy is high despite the imbalanced data.
+
+ROC Curve: An ROC curve is a two-dimensional plot of sensitivity (recall, or true positive rate)
+vs specifcity (false positive rate). The area under the curve is referred to as the AUC, and is a
+numeric metric used to represent the quality and performance of the classifer (model)
+An AUC of 0.5 is essentially the same as random guessing without a model, whereas an AUC of
+1.0 is considered a perfect classifer. Generally, the higher the AUC value the better, and an AUC
+above 0.8 is considered quite good.
+The higher the AUC value, the closer the curve gets to the upper left corner of the plot. One can
+easily see from the ROC curves then that the goal is to fnd and tune a model that maximizes the
+true positive rate, while simultaneously minimizing the false positive rate. Said another way, the
+goal as shown by the ROC curve is to correctly predict as many of the actual positives as possible,
+while also predicting as many of the actual negatives as possible, and therefore minimize errors
+(incorrect classifcations) for both.
+
+3. Optimization of the models
+
+A) Resampling techniques
+
+- training/test set
+
+- k-fold cross validation
+
+k-fold cross-validation randomly divides the data into k blocks of roughly equal size. Each of the blocks is left out in turn and the other k-1 blocks are used to train the model. The held out block is predicted and these predictions are summarized into some type of performance measure (e.g. accuracy, root mean squared error (RMSE), etc.). The k estimates of performance are averaged to get the overall resampled estimate. k is 10 or sometimes 5. Why? I have no idea. When k is equal to the sample size, this procedure is known as Leave-One-Out CV. I generally don't use it and won't consider it here.
+
+1) Cross-validation: Divide the data to train and test sets - say of sizes 8,000 and 2,000. Then, do a 5-fold cross-validation on the training set, so that each run will train on 6,400 points and test on the remaining 1,600 points. Your final model is the one that gives the minimum average validation error.
+2) Using a fixed validation set: Here, you divide the total data into 3 parts a priori of sizes 6,400, 1,600 and 2,000 respectively, train on the first part and do model selection using the second part.
+
+The first one is more robust. Suppose for a given set of parameters, two models give the following errors on 5 folds:
+Model 1: {5.1%, 4.9%, 5.2%, 5.0%, 4.8%} => Average : 5.0%
+Model 2: {4.1%, 6.4%, 6.7%, 6.5%, 6.3%} => Average : 6.0%
+Clearly, model 1 does mostly better than model 2, and therefore, that should be the one selected. Model 2 performs better on just fold 1, perhaps because the model just accidentally fits the noise in that split well. 
+What an analyst typically wants is a model that is able to predict well samples that have not been used for estimating the structural parameters (the so called training sample)
+A predictive model is considered good when it is capable of predicting previously unseen samples with high accuracy.
+
+- Repeated k-fold CV
+It does the same as above but more than once. For example, five repeats of 10-fold CV would give 50 total resamples that are averaged. Note this is not the same as 50-fold CV.
+
+- Leave Group Out cross-validation (LGOCV), aka Monte Carlo CV
+It randomly leaves out some set percentage of the data B times. It is similar to min-training and hold-out splits but only uses the training set.
+
+- bootstrap (to replace def for bagging)
+A bootstrap sample is a smaller sample that is "bootstrapped" from a larger sample. Bootstrapping is a type of resampling where large numbers of smaller samples of the same size are repeatedly drawn, with replacement, from a single original sample. 
+For example, let's say your sample was made up of ten numbers: 49, 34, 21, 18, 10, 8, 6, 5, 2, 1. You randomly draw three numbers 5, 1, and 49. You then replace those numbers into the sample and draw three numbers again. Repeat the process of drawing x numbers B times.
+
+- bootstrap aggregating (bagging)
+
+- boosting
+
+Which one should use?
+It's all about variance and bias.
+CV tends to be less biased but K-fold CV has fairly large variance. On the other hand, bootstrapping tends to drastically reduce the variance but gives more biased results.
+Other bootstrapping methods have been adapted to deal with the bootstrap bias (such as the 632 and 632+ rules).
+Two other approaches would be "Monte Carlo CV" aka "leave-group-out CV" which does many random splits of the data (sort of like mini-training and test splits). Variance is very low for this method and the bias isn't too bad if the percentage of data in the hold-out is low. Also, repeated CV does K-fold several times and averages the results similar to regular K-fold. I'm most partial to this since it keeps the low bias and reduces the variance. Other bootstrapping methods have been adapted to deal with the bootstrap bias.
+
+For large sample sizes, the variance issues become less important and the computational part is more of an issues. I still would stick by repeated CV for small and large sample sizes.
+
+
+ROC Curve: An ROC curve is a two-dimensional plot of sensitivity (recall, or true positive rate)
+vs specifcity (false positive rate). The area under the curve is referred to as the AUC, and is a
+numeric metric used to represent the quality and performance of the classifer (model)
+An AUC of 0.5 is essentially the same as random guessing without a model, whereas an AUC of
+1.0 is considered a perfect classifer. Generally, the higher the AUC value the better, and an AUC
+above 0.8 is considered quite good.
+The higher the AUC value, the closer the curve gets to the upper left corner of the plot. One can
+easily see from the ROC curves then that the goal is to fnd and tune a model that maximizes the
+true positive rate, while simultaneously minimizing the false positive rate. Said another way, the
+goal as shown by the ROC curve is to correctly predict as many of the actual positives as possible,
+while also predicting as many of the actual negatives as possible, and therefore minimize errors
+(incorrect classifcations) for both.
+
+B) Hyperparameters tuning
+
+Hyperparameter tuning is one of the key concepts in machine learning. Grid search, random search, gradient based optimization are few concepts you could use to perform hyperparameter tuning automatically
+
+## II. Datapreprocessing
+
+1.Imputation
+
+Missing Data
+When working with real world data, you will often encounter missing values in your data-set. How you deal with them can be crucial for your analysis and the conclusion you will draw.
+
+Missing values can be of three general types:
+
+- Missing Completely At Random (MCAR): When missing data are MCAR, the presence/absence of data is completely independent of observable variables and parameters of interest. In this case, the analysis performed on the data are unbiased. In practice, it is highly unlikely.
+- Missing At Random (MAR): When missing data is not random but can be totally related to a variable where there is complete information. An example is that males are less likely to fill in a depression survey but this has nothing to do with their level of depression, after accounting for maleness. This kind of missing data can induce a bias in your analysis especially if it unbalances your data because of many missing values in a certain category.
+- Missing Not At Random (MNAR): When the missing values are neither MCAR nor MAR. In the previous example that would be the case if people tended not to answer the survey depending on their depression level.
+Missing data Inputation (methods)
+Imputation is the process of filling missing values in a dataset with a intelligently reconstructed value.
+Methods:
+Amelia, mice, knn, gradient boosting
+
+![Handling missing values.](images/imputation.png)
+
+2.Inbalanced data
+- imbalanced dataset
+Imbalanced data typically refers to a problem with classification problems where the classes are not represented equally.
+solutions: resampling methods: downsampling, upsampling, Synthetic Minority Over-sampling Technique (SMOTE)
+ex: You are working on your dataset. You create a classification model and get 90% accuracy immediately. "Fantastic" you think. You dive a little deeper and discover that 90% of the data belongs to one class. Damn!
+
+This is an example of an imbalanced dataset and the frustrating results it can cause.
+- accuracy paradox
+Sometimes it may be desirable to select a model with a lower accuracy because it has a greater predictive power on the problem.
+For example, in a problem where there is a large class imbalance, a model can predict the value of the majority class for all predictions and achieve a high classification accuracy, the problem is that this model is not useful in the problem domain.
