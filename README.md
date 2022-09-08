@@ -1,5 +1,5 @@
-# Instant-credit-granting-tool
+En collaboration avec la Société Générale, le projet consistait à réaliser un outil d’octroi instantané de crédit, donnant le score de crédit d’un particulier, en remplaçant les méthodes actuelles d’attribution du score de crédit par des algorithmes de machine learning.
 
-Rapport PI2:
-https://drive.google.com/open?id=1_PhyskGYvY-j0VzUNbuYl7Y-mj1IistA
-# instant-credit-tool
+La première partie du projet était l’analyse de la base de données « Give Me Some Credit » sur Kaggle (utilisé pour un concours) de plus de 150 000 clients, avec 10 variables indépendantes tel que l’âge, le revenu mensuel, la dette ratio, le nombre de crédits etc. ; et le pré-traitement des données (variables manquantes, aberrantes). La deuxième partie du projet était la recherche et l’implémentation des algorithmes de machine learning avec R tels que la logistique régression, les forêts aléatoires, les réseaux de neurones, gbm, xgboost puis l’optimisation de ceux-ci pour obtenir les meilleurs résultats. La dernière partie était la création de l’outil d’octroi de crédit donnant le score de crédit d’un individu selon ses données de crédit (interface utilisateur) avec R Shiny permettant de regrouper tout le projet et de le visualiser de manière interactive.
+
+https://www.youtube.com/watch?v=ai9_TVfyGFk
